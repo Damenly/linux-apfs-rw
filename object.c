@@ -27,9 +27,9 @@ static u64 apfs_fletcher64(void *addr, size_t len)
 	}
 
 	c1 = sum1 + sum2;
-	c1 = 0xFFFFFFFF - do_div(c1, 0xFFFFFFFF);
+	c1 = 0xFFFFFFFF - c1 % 0xFFFFFFFF;
 	c2 = sum1 + c1;
-	c2 = 0xFFFFFFFF - do_div(c2, 0xFFFFFFFF);
+	c2 = 0xFFFFFFFF - c2 % 0xFFFFFFFF;
 
 	return (c2 << 32) | c1;
 }
