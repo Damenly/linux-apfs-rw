@@ -23,6 +23,7 @@
 DEFINE_MUTEX(nxs_mutex);
 static LIST_HEAD(nxs);
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 11, 0)
 /**
  * apfs_nx_find_by_dev - Search for a device in the list of mounted containers
  * @bdev:	block device for the wanted container
@@ -43,6 +44,29 @@ static struct apfs_nxsb_info *apfs_nx_find_by_dev(struct block_device *bdev)
 	}
 	return NULL;
 }
+
+#else
+/**
+ * apfs_nx_find_by_dev - Search for a device in the list of mounted containers
+ * @dev:	device number of block device for the wanted container
+ *
+ * Returns a pointer to the container structure in the list, or NULL if the
+ * container isn't currently mounted.
+ */
+static struct apfs_nxsb_info *apfs_nx_find_by_dev(dev_t dev)
+{
+	struct apfs_nxsb_info *curr;
+
+	lockdep_assert_held(&nxs_mutex);
+	list_for_each_entry(curr, &nxs, nx_list) {
+		struct block_device *curr_bdev = curr->nx_bdev;
+
+		if (curr_bdev->bd_dev != dev)
+			return curr;
+	}
+	return NULL;
+}
+#endif
 
 /**
  * apfs_sb_set_blocksize - Set the block size for the container's device
@@ -1122,9 +1146,12 @@ static int apfs_attach_nxi(struct apfs_sb_info *sbi, const char *dev_name, fmode
 {
 	struct apfs_nxsb_info *nxi;
 	struct block_device *bdev;
+	dev_t dev;
+	int ret;
 
 	lockdep_assert_held(&nxs_mutex);
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 11, 0)
 	bdev = lookup_bdev(dev_name);
 	if (IS_ERR(bdev))
 		return PTR_ERR(bdev);
@@ -1132,6 +1159,13 @@ static int apfs_attach_nxi(struct apfs_sb_info *sbi, const char *dev_name, fmode
 	nxi = apfs_nx_find_by_dev(bdev);
 	bdput(bdev);
 	bdev = NULL;
+#else
+	ret = lookup_bdev(dev_name, &dev);
+	if (ret)
+		return ret;
+	nxi = apfs_nx_find_by_dev(dev);
+#endif
+
 	if (!nxi) {
 		nxi = kzalloc(sizeof(*nxi), GFP_KERNEL);
 		if (!nxi)
